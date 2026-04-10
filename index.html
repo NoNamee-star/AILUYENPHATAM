@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+
+<title>AI Luyện Phát Âm</title>
+
+<style>
+
+body {
+  font-family: 'Nunito', Arial, sans-serif;
+  text-align: center;
+
+  background-image: url("https://khoinguonsangtao.vn/wp-content/uploads/2022/11/background-vu-tru-mau-tim-dep-mat.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.container {
+  background: rgba(255,255,255,0.95);
+  width: 560px;
+  margin: 30px auto;
+  padding: 25px;
+  border-radius: 20px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+}
+
+.word {
+  font-size: 52px;
+  color: #e91e63;
+  font-weight: 900;
+}
+
+button {
+  padding: 12px 20px;
+  margin: 6px;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.next { background: #2196F3; color: white; }
+.retry { background: #ff9800; color: white; }
+.modeBtn { background: #673ab7; color: white; font-size: 18px; }
+.micBtn { background: #4CAF50; color: white; }
+
+.result {
+  font-size: 22px;
+  margin-top: 10px;
+  min-height: 28px;
+}
+
+img {
+  width: 100%;
+  max-width: 450px;
+  height: auto;
+  border-radius: 16px;
+  margin: 15px auto;
+  border: 4px solid #ffd54f;
+  display: block;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+}
+
+.commentBox {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: 18px;
+  font-size: 26px;
+  font-weight: bold;
+}
+
+.excellent { background: #c8e6c9; color: #2e7d32; }
+.good { background: #bbdefb; color: #1565c0; }
+.average { background: #ffe082; color: #ef6c00; }
+.bad { background: #ffcdd2; color: #c62828; }
+
+.scoreText {
+  font-size: 34px;
+  font-weight: 900;
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>📚 Nhập danh sách từ</h2>
+
+<textarea id="inputWords" style="width:100%;height:70px"></textarea>
+
+<br>
+
+<button onclick="saveWords()">Lưu danh sách</button>
+
+<div id="saveMsg" style="margin-top:10px; font-weight:bold;"></div>
+
+<hr>
+
+<h2>🎮 Chọn chế độ</h2>
+
+<button class="modeBtn" onclick="setMode('practice')">📚 Ôn tập</button>
+<button class="modeBtn" onclick="setMode('test')">📝 Kiểm tra</button>
+
+<hr>
+
+<div id="game">
+
+<h1 id="word" class="word">Luyện phát âm</h1>
+
+<img id="image" src="https://skypeenglish.vn/wp-content/uploads/2023/03/Phat-am-tieng-Anh-1.jpg">
+
+<br>
+
+<div id="actionBtns"></div>
+
+<div id="result" class="result"></div>
+
+</div>
+
+<div id="practiceDone" style="display:none">
+<h1>🎉 Chúc mừng!</h1>
+<p>Bạn đã ôn tập xong</p>
+<button class="modeBtn" onclick="setMode('test')">➡️ Chuyển sang kiểm tra</button>
+</div>
+
+<div id="summary" style="display:none">
+
+<h1>🎉 KẾT THÚC</h1>
+
+<div id="scoreText" class="scoreText"></div>
+
+<div id="comment" class="commentBox"></div>
+
+<h3>📌 Từ cần ôn tập:</h3>
+
+<div id="wrongList" style="font-size:22px"></div>
+
+</div>
+
+</div>
+
+<script>
+
+let words = [];
+let queue = [];
+let currentIndex = 0;
+let current = "";
+
+let mode = "practice";
+let attempts = 0;
+
+let totalScore = 0;
+let scorePerWord = 0;
+
+let wrongWords = [];
+
+let recognition;
+let listenTimer;
+
+let clapSound = new Audio("https://actions.google.com/sounds/v1/crowds/applause.ogg");
+
+function initRecognition() {
+  recognition = new webkitSpeechRecognition();
+  recognition.lang = "en-US";
+
+  recognition.onresult = function(event) {
+    clearTimeout(listenTimer);
+    let speech = event.results[0][0].transcript.toLowerCase().trim();
+    checkAnswer(speech);
+  };
+}
+
+function startListeningTimeout() {
+  listenTimer = setTimeout(function() {
+    recognition.stop();
+    document.getElementById("result").innerText = "⚠️ Không nghe rõ!";
+  }, 5000);
+}
+
+async function startListening() {
+  document.getElementById("result").innerText = "🎤 Đang nghe...";
+
+  try {
+    // Yêu cầu quyền microphone trên điện thoại
+    await navigator.mediaDevices.getUserMedia({ audio: true });
+
+    recognition.start();
+    startListeningTimeout();
+
+  } catch (e) {
+    document.getElementById("result").innerText =
+      "⚠️ Trình duyệt chưa được cấp quyền microphone";
+    console.log("Microphone permission error:", e);
+  }
+}
+
+function setMode(m) {
+  if (words.length === 0) {
+    alert("Chưa có từ!");
+    return;
+  }
+  mode = m;
+  startGame();
+}
+
+function saveWords() {
+
+  let input = document.getElementById("inputWords").value;
+
+  words = input.split(",")
+    .map(w => w.trim().toLowerCase())
+    .filter(w => w);
+
+  localStorage.setItem("words", JSON.stringify(words));
+
+  let msg = document.getElementById("saveMsg");
+
+  if (words.length > 0) {
+    msg.innerText = "✅ Đã lưu danh sách!";
+    msg.style.color = "green";
+  } else {
+    msg.innerText = "⚠️ Danh sách trống!";
+    msg.style.color = "red";
+  }
+
+  setTimeout(() => {
+    msg.innerText = "";
+  }, 2000);
+}
+
+function loadWords() {
+  let saved = localStorage.getItem("words");
+  if (saved) {
+    words = JSON.parse(saved);
+    document.getElementById("inputWords").value = words.join(", ");
+  }
+}
+
+function shuffle(arr) {
+  return arr.sort(() => Math.random() - 0.5);
+}
+
+function startGame() {
+  initRecognition();
+
+  queue = shuffle([...words]);
+
+  currentIndex = 0;
+  attempts = 0;
+  totalScore = 0;
+  scorePerWord = 100 / words.length;
+  wrongWords = [];
+
+  document.getElementById("summary").style.display = "none";
+  document.getElementById("practiceDone").style.display = "none";
+  document.getElementById("game").style.display = "block";
+
+  nextWord();
+}
+
+function nextWord() {
+  document.getElementById("result").innerText = "";
+  attempts = 0;
+
+  if (currentIndex >= queue.length) {
+    if (mode === "practice") showPracticeDone();
+    else finishGame();
+    return;
+  }
+
+  current = queue[currentIndex];
+  document.getElementById("word").innerText = current;
+
+  document.getElementById("image").src =
+  "https://skypeenglish.vn/wp-content/uploads/2023/03/Phat-am-tieng-Anh-1.jpg";
+
+  showButtons();
+  speakWord();
+}
+
+function showButtons() {
+  if (mode === "practice") {
+    document.getElementById("actionBtns").innerHTML =
+      '<button class="micBtn" onclick="startListening()">🎤 Bấm để nói</button>' +
+      '<button class="retry" onclick="retry()">🔁 Thử lại</button>' +
+      '<button class="next" onclick="goNext()">➡️ Kế tiếp</button>';
+  } else {
+    document.getElementById("actionBtns").innerHTML =
+      '<button class="micBtn" onclick="startListening()">🎤 Bấm để nói</button>' +
+      '<button class="retry" onclick="retry()">🔁 Thử lại</button>';
+  }
+}
+
+function speakWord() {
+  let msg = new SpeechSynthesisUtterance(current);
+  msg.lang = "en-US";
+
+  msg.onend = function() {
+    document.getElementById("result").innerText =
+      "👉 Bấm nút 🎤 để nói";
+  };
+
+  speechSynthesis.speak(msg);
+}
+
+function retry() {
+  document.getElementById("result").innerText = "";
+  speakWord();
+}
+
+function checkAnswer(speech) {
+  if (speech === current) {
+    document.getElementById("result").innerText = "✅ Đúng";
+    clapSound.play();
+
+    if (mode === "test") {
+      let score = (3 - attempts) / 3 * scorePerWord;
+      totalScore += score;
+      showNextButton();
+    }
+
+  } else {
+
+    if (mode === "practice") {
+      document.getElementById("result").innerText = "❌ Sai";
+    } else {
+      attempts++;
+
+      if (attempts === 1 && !wrongWords.includes(current)) {
+        wrongWords.push(current);
+      }
+
+      document.getElementById("result").innerText =
+        "❌ Sai (" + attempts + "/3)";
+
+      if (attempts >= 3) {
+        showNextButton();
+      }
+    }
+  }
+}
+
+function showNextButton() {
+  document.getElementById("actionBtns").innerHTML =
+    '<button class="next" onclick="goNext()">➡️ Kế tiếp</button>';
+}
+
+function goNext() {
+  document.getElementById("result").innerText = "";
+  currentIndex++;
+  nextWord();
+}
+
+function showPracticeDone() {
+  document.getElementById("game").style.display = "none";
+  document.getElementById("practiceDone").style.display = "block";
+}
+
+function finishGame() {
+  document.getElementById("game").style.display = "none";
+  document.getElementById("summary").style.display = "block";
+
+  let score = Math.round(totalScore);
+  document.getElementById("scoreText").innerText = "⭐ Điểm: " + score;
+
+  let comment = document.getElementById("comment");
+
+  if (score >= 90) {
+    comment.className = "commentBox excellent";
+    comment.innerText = "🏆 Xuất sắc!";
+  } else if (score >= 70) {
+    comment.className = "commentBox good";
+    comment.innerText = "👍 Tốt!";
+  } else if (score >= 50) {
+    comment.className = "commentBox average";
+    comment.innerText = "🙂 Cố gắng!";
+  } else {
+    comment.className = "commentBox bad";
+    comment.innerText = "💪 Luyện thêm!";
+  }
+
+  document.getElementById("wrongList").innerText =
+    wrongWords.join(", ");
+}
+
+window.onload = loadWords;
+
+</script>
+
+</body>
+</html>
